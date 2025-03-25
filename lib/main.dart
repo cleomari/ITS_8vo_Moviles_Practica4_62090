@@ -1,14 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'api_service.dart';
+import 'login_screen.dart';
 
 void main() async {
-  await dotenv.load(fileName: ".env"); // Cargar variables de entorno
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
+
+  final prefs = await SharedPreferences.getInstance();
+  final token = prefs.getString('token');
+
+  runApp(MyApp(isLoggedIn: token != null));
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool isLoggedIn;
+
+  const MyApp({super.key, required this.isLoggedIn});
 
   @override
   Widget build(BuildContext context) {
@@ -17,7 +27,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
       ),
-      home: const MyHomePage(title: 'ToDo List'),
+      home: isLoggedIn
+          ? const MyHomePage(title: 'ToDo List')
+          : const LoginScreen(),
     );
   }
 }
@@ -40,7 +52,6 @@ class _MyHomePageState extends State<MyHomePage> {
     _loadTasks();
   }
 
-  // Cargar tareas desde la API
   Future<void> _loadTasks() async {
     try {
       final tasksFromApi = await ApiService.getTasks();
@@ -54,7 +65,6 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Navegar a la pantalla de tarea
   void _navigateToTaskScreen({int? index}) async {
     final result = await Navigator.push(
       context,
@@ -68,13 +78,11 @@ class _MyHomePageState extends State<MyHomePage> {
     if (result != null) {
       try {
         if (index != null) {
-          // Actualizar tarea existente
           await ApiService.updateTask(tasks[index]['id'], result);
         } else {
-          // Crear nueva tarea
           await ApiService.createTask(result);
         }
-        _loadTasks(); // Recargar tareas
+        _loadTasks();
       } catch (e) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error: $e')),
@@ -83,11 +91,10 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Eliminar una tarea
   void _deleteTask(int index) async {
     try {
       await ApiService.deleteTask(tasks[index]['id']);
-      _loadTasks(); // Recargar tareas
+      _loadTasks();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
@@ -95,17 +102,29 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  // Marcar una tarea como completada
   void _toggleTaskCompletion(int index) async {
     try {
       await ApiService.toggleTaskCompletion(
         tasks[index]['id'],
         !tasks[index]['completada'],
       );
-      _loadTasks(); // Recargar tareas
+      _loadTasks();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error: $e')),
+      );
+    }
+  }
+
+  void _logout() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('token');
+
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+            (route) => false,
       );
     }
   }
@@ -116,6 +135,13 @@ class _MyHomePageState extends State<MyHomePage> {
       appBar: AppBar(
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(widget.title),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout),
+            onPressed: _logout,
+            tooltip: 'Cerrar sesión',
+          ),
+        ],
       ),
       body: tasks.isEmpty
           ? const Center(
@@ -146,7 +172,7 @@ class _MyHomePageState extends State<MyHomePage> {
                   IconButton(
                     icon: const Icon(Icons.edit),
                     onPressed: () {
-                      _navigateToTaskScreen(index: index); // Editar tarea
+                      _navigateToTaskScreen(index: index);
                     },
                   ),
                   IconButton(
@@ -173,7 +199,7 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
       floatingActionButton: FloatingActionButton(
         onPressed: () {
-          _navigateToTaskScreen(); // Agregar nueva tarea
+          _navigateToTaskScreen();
         },
         tooltip: 'Agregar tarea',
         child: const Icon(Icons.add),
@@ -231,7 +257,7 @@ class _TaskScreenState extends State<TaskScreen> {
                 labelText: 'Descripción',
                 hintText: 'Ingresa la descripción de la tarea',
               ),
-              maxLines: null, // TextArea de múltiples líneas
+              maxLines: null,
               keyboardType: TextInputType.multiline,
             ),
             CheckboxListTile(
